@@ -1,126 +1,83 @@
 name: Multi Environment Deploy
- 
+
 on:
-
   push:
-
     branches:
-
       - develop
-
       - main
- 
+
 jobs:
-
   deploy:
-
     runs-on: ubuntu-latest
- 
+
     steps:
-
       - name: Checkout repository
-
         uses: actions/checkout@v4
- 
+
       - name: Set up Python
-
         uses: actions/setup-python@v4
-
         with:
+          python-version: "3.10"
 
-          python-version: '3.10'
- 
       - name: Install Snowflake Connector
-
         run: pip install snowflake-connector-python
- 
+
       - name: Execute SQL Files
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USERNAME: ${{ secrets.SNOWFLAKE_USERNAME }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+          DEV_SNOWFLAKE_DATABASE: ${{ secrets.DEV_SNOWFLAKE_DATABASE }}
+          DEV_SNOWFLAKE_SCHEMA: ${{ secrets.DEV_SNOWFLAKE_SCHEMA }}
+
+          PROD_SNOWFLAKE_DATABASE: ${{ secrets.PROD_SNOWFLAKE_DATABASE }}
+          PROD_SNOWFLAKE_SCHEMA: ${{ secrets.PROD_SNOWFLAKE_SCHEMA }}
 
         run: |
-
           python <<EOF
-
           import snowflake.connector
-
           import glob
-
           import os
- 
-          branch = os.environ.get("GITHUB_REF").split("/")[-1]
 
+          branch = os.environ.get("GITHUB_REF_NAME")
           print(f"Deploying branch: {branch}")
- 
+
           if branch == "develop":
-
-              user = "${{ secrets.SNOWFLAKE_USERNAME }}"
-
-              password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-
-              database = "${{ secrets.DEV_SNOWFLAKE_DATABASE }}"
-
-              schema = "${{ secrets.DEV_SNOWFLAKE_SCHEMA }}"
-
-              role = "${{ secrets.DEV_SNOWFLAKE_ROLE }}"
-
+              database = os.environ["DEV_SNOWFLAKE_DATABASE"]
+              schema = os.environ["DEV_SNOWFLAKE_SCHEMA"]
+              print("Deploying to DEV...")
           else:
+              database = os.environ["PROD_SNOWFLAKE_DATABASE"]
+              schema = os.environ["PROD_SNOWFLAKE_SCHEMA"]
+              print("Deploying to PROD...")
 
-              user = "${{ secrets.SNOWFLAKE_USERNAME }}"
-
-              password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-
-              database = "${{ secrets.PROD_SNOWFLAKE_DATABASE }}"
-
-              schema = "${{ secrets.PROD_SNOWFLAKE_SCHEMA }}"
-
-              role = "${{ secrets.PROD_SNOWFLAKE_ROLE }}"
- 
-          warehouse = "${{ secrets.SNOWFLAKE_WAREHOUSE }}"
-
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
- 
           conn = snowflake.connector.connect(
-
-              user=user,
-
-              password=password,
-
-              account=account
-
+              user=os.environ["SNOWFLAKE_USERNAME"],
+              password=os.environ["SNOWFLAKE_PASSWORD"],
+              account=os.environ["SNOWFLAKE_ACCOUNT"],
+              warehouse=os.environ["SNOWFLAKE_WAREHOUSE"]
           )
- 
+
           cursor = conn.cursor()
- 
-          # Activate correct context
 
-          cursor.execute(f"USE ROLE {role}")
+          try:
+              cursor.execute(f"USE DATABASE {database}")
+              cursor.execute(f"USE SCHEMA {schema}")
 
-          cursor.execute(f"USE WAREHOUSE {warehouse}")
+              for file in sorted(glob.glob("sql/*.sql")):
+                  print(f"Executing {file}")
+                  with open(file, "r") as f:
+                      sql = f.read()
 
-          cursor.execute(f"USE DATABASE {database}")
+                  for stmt in sql.split(";"):
+                      if stmt.strip():
+                          cursor.execute(stmt)
 
-          cursor.execute(f"USE SCHEMA {schema}")
- 
-          # Execute all SQL files in order
+              print("✅ Deployment successful!")
 
-          for file in sorted(glob.glob("sql/*.sql")):
-
-              print(f"Executing {file}")
-
-              with open(file) as f:
-
-                  sql = f.read()
- 
-              for stmt in sql.split(";"):
-
-                  if stmt.strip():
-
-                      cursor.execute(stmt)
- 
-          cursor.close()
-
-          conn.close()
- 
-          print("Deployment successful")
-
+          finally:
+              cursor.close()
+              conn.close()
           EOF
- 
