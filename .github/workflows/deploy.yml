@@ -31,9 +31,11 @@ jobs:
 
           DEV_SNOWFLAKE_DATABASE: ${{ secrets.DEV_SNOWFLAKE_DATABASE }}
           DEV_SNOWFLAKE_SCHEMA: ${{ secrets.DEV_SNOWFLAKE_SCHEMA }}
+          DEV_SNOWFLAKE_ROLE: ${{ secrets.DEV_SNOWFLAKE_ROLE }}
 
           PROD_SNOWFLAKE_DATABASE: ${{ secrets.PROD_SNOWFLAKE_DATABASE }}
           PROD_SNOWFLAKE_SCHEMA: ${{ secrets.PROD_SNOWFLAKE_SCHEMA }}
+          PROD_SNOWFLAKE_ROLE: ${{ secrets.PROD_SNOWFLAKE_ROLE }}
 
         run: |
           python <<EOF
@@ -47,10 +49,12 @@ jobs:
           if branch == "develop":
               database = os.environ["DEV_SNOWFLAKE_DATABASE"]
               schema = os.environ["DEV_SNOWFLAKE_SCHEMA"]
+              role = os.environ["DEV_SNOWFLAKE_ROLE"]
               print("Deploying to DEV...")
           else:
               database = os.environ["PROD_SNOWFLAKE_DATABASE"]
               schema = os.environ["PROD_SNOWFLAKE_SCHEMA"]
+              role = os.environ["PROD_SNOWFLAKE_ROLE"]
               print("Deploying to PROD...")
 
           conn = snowflake.connector.connect(
@@ -63,6 +67,7 @@ jobs:
           cursor = conn.cursor()
 
           try:
+              cursor.execute(f"USE ROLE {role}")
               cursor.execute(f"USE DATABASE {database}")
               cursor.execute(f"USE SCHEMA {schema}")
 
